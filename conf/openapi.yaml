@@ -1,0 +1,7 @@
+openapi: 3.0.1
+info:
+  title: API Gateway
+  description: |
+    Endpoints for acessing data
+
+  version: "1.0"

@@ -1,31 +1,45 @@
 buildscript {
   ext {
-    kotlinVersion = "1.3.72"
+    kotlinVersion = "1.4.10"
     joobyVersion = "2.9.3"
+    jacksonVersion = "2.11.3"
+    jdbi3Version = "3.15.0"
+    junitJupiterVersion = "5.7.0"
     coroutines = "1.4.1"
+  }
+  dependencies {
+    classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:${kotlinVersion}"
   }
 }
 
 plugins {
   id "application"
-  id "org.jetbrains.kotlin.jvm" version "1.3.72"
-  id "org.jetbrains.kotlin.kapt" version "1.3.72"
-  id "io.jooby.openAPI" version "${joobyVersion}"
+  id "org.jetbrains.kotlin.jvm" version "${kotlinVersion}"
   id "io.jooby.run" version "${joobyVersion}"
+  id "io.jooby.openAPI" version "${joobyVersion}"
   id "io.spring.dependency-management" version "1.0.9.RELEASE"
   id "com.google.osdetector" version "1.6.2"
   id "com.github.johnrengelman.shadow" version "5.2.0"
+  id "jacoco"
+  id "project-report"
+  id "org.unbroken-dome.test-sets" version "3.0.1"
 }
+apply plugin: "org.jetbrains.kotlin.kapt"
 
-group ""
+group "de.test"
 version "1.0.0"
-mainClassName = ".AppKt"
+description = "test API"
+mainClassName = "AppKt"
 sourceCompatibility = 1.8
 
 repositories {
   mavenLocal()
   mavenCentral()
   jcenter()
+}
+
+configurations {
+  ktlint
 }
 
 dependencyManagement {
@@ -36,26 +50,103 @@ dependencyManagement {
 
 dependencies {
   kapt "io.jooby:jooby-apt"
-  implementation "io.jooby:jooby-netty"
-  implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8"
-  implementation "ch.qos.logback:logback-classic"
-  implementation 'io.jooby:jooby-swagger-ui'
-  implementation 'io.swagger.core.v3:swagger-annotations:2.1.4'
-  implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutines"
 
-  testImplementation "org.junit.jupiter:junit-jupiter-api"
-  testImplementation "org.junit.jupiter:junit-jupiter-engine"
-  testImplementation "io.jooby:jooby-test"
-  testImplementation "com.squareup.okhttp3:okhttp"
+  implementation(
+          "org.jetbrains.kotlin:kotlin-stdlib-jdk8",
+          "org.apache.logging.log4j:log4j-core:2.13.3",
+          "org.apache.logging.log4j:log4j-slf4j-impl:2.13.3",
+          "org.apache.logging.log4j:log4j-api-kotlin:1.0.0",
+
+          "io.jooby:jooby-netty",
+          "io.jooby:jooby-hikari",
+          "io.jooby:jooby-jdbi",
+          "io.jooby:jooby-flyway",
+          "io.jooby:jooby-jackson",
+          "io.jooby:jooby-pac4j",
+          "io.jooby:jooby-swagger-ui",
+
+          "org.pac4j:pac4j-jwt:4.0.3",
+          "org.postgresql:postgresql:42.2.14",
+
+          "org.jdbi:jdbi3-postgres:${jdbi3Version}",
+          "org.jdbi:jdbi3-jackson2:${jdbi3Version}",
+          "org.jdbi:jdbi3-sqlobject:${jdbi3Version}",
+          "org.jdbi:jdbi3-kotlin-sqlobject:${jdbi3Version}",
+          "org.jdbi:jdbi3-kotlin:${jdbi3Version}",
+
+          "com.fasterxml.jackson.module:jackson-module-kotlin:${jacksonVersion}",
+          "com.fasterxml.jackson.core:jackson-annotations:${jacksonVersion}",
+
+          "io.swagger.core.v3:swagger-annotations:2.1.4",
+          "com.squareup.okhttp3:okhttp:4.7.2",
+          "org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutines",
+          "ru.gildor.coroutines:kotlin-coroutines-okhttp:1.0",
+  )
+
+  testImplementation(
+          "org.junit.jupiter:junit-jupiter:${junitJupiterVersion}",
+          "org.junit.jupiter:junit-jupiter-api:${junitJupiterVersion}",
+          "org.junit.jupiter:junit-jupiter-engine:${junitJupiterVersion}",
+          "org.jetbrains.kotlin:kotlin-test",
+          "org.mockito:mockito-inline:3.4.6",
+          "com.nhaarman.mockitokotlin2:mockito-kotlin:2.2.0",
+          "com.github.gmazzo:okhttp-mock:1.3.2",
+          "io.jooby:jooby-test:2.8.9",
+          "com.h2database:h2:1.4.200",
+          "org.jetbrains.kotlinx:kotlinx-coroutines-test:$coroutines"
+  )
+
+  ktlint "com.pinterest:ktlint:0.37.2"
 }
 
-test {
+compileKotlin {
+  kotlinOptions.jvmTarget = "11"
+}
+
+compileTestKotlin {
+  kotlinOptions.jvmTarget = "11"
+}
+
+testSets {
+  integrationTest
+}
+check.dependsOn integrationTest
+integrationTest.mustRunAfter test
+
+// Make all tests use JUnit 5
+tasks.withType(Test) {
   useJUnitPlatform()
 }
 
-/** Kotlin debug information: */
-tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).all {
-  kotlinOptions.javaParameters = true
+jacoco {
+  // For more config: https://docs.gradle.org/current/userguide/jacoco_plugin.html
+  toolVersion = "0.8.5"
+  reportsDir = file("$buildDir/reports/jacoco")
+}
+
+jacocoTestReport {
+  reports {
+    xml.enabled false
+    csv.enabled false
+    html.destination file("${buildDir}/jacocoHtml")
+  }
+}
+
+task ktlint(type: JavaExec, group: "verification") {
+  description = "Check Kotlin code style."
+  main = "com.pinterest.ktlint.Main"
+  classpath = configurations.ktlint
+  args "src/**/*.kt"
+  args "--reporter=html,output=${buildDir}/ktlintHtml/ktlint.html"
+  args "--disabled_rules=no-wildcard-imports"
+}
+check.dependsOn ktlint
+
+task ktlintFormat(type: JavaExec, group: "formatting") {
+  description = "Fix Kotlin code style deviations."
+  main = "com.pinterest.ktlint.Main"
+  classpath = configurations.ktlint
+  args "--disabled_rules=no-wildcard-imports", "-F", "src/**/*.kt"
 }
 
 shadowJar {
